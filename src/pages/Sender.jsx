@@ -46,17 +46,27 @@ export default function Sender() {
 const startBroadcast = async () => {
   if (isBroadcasting) return;
 
-  audioCtxRef.current = createAudioContext();
+  // 1. Force initialize context directly inside the user's click stack
+  const ctx = createAudioContext();
+  
+  // 2. Resume immediately if the browser put it to sleep (fixes Chrome auto-mute)
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  
+  audioCtxRef.current = ctx;
   setIsBroadcasting(true);
 
   const digits = account.split("");
-  const noteLength = 0.15;  // 150ms per digit (Wider, solid window)
-  const spaceLength = 0.08; // 80ms complete silence gap between numbers
+  const noteLength = 0.15;  // 150ms per digit
+  const spaceLength = 0.08; // 80ms gap
 
   const runSequence = () => {
+    // Safety check: if user clicked stop, do nothing
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
+    
     let timeOffset = audioCtxRef.current.currentTime + 0.02;
 
-    // Helper function to program a tone burst safely
     const playTone = (freq, start, duration) => {
       const osc = audioCtxRef.current.createOscillator();
       const gain = audioCtxRef.current.createGain();
@@ -75,24 +85,24 @@ const startBroadcast = async () => {
       oscillatorsRef.current.push(osc);
     };
 
-    // 1. Fire START framing flag
+    // 1. START signal
     playTone(frequencyMap["START"], timeOffset, noteLength);
     timeOffset += noteLength + spaceLength;
 
-    // 2. Fire the 10 digits sequentially
+    // 2. The 10 digits
     digits.forEach((digit) => {
       playTone(frequencyMap[digit], timeOffset, noteLength);
       timeOffset += noteLength + spaceLength;
     });
 
-    // 3. Fire END framing flag
+    // 3. END signal
     playTone(frequencyMap["END"], timeOffset, noteLength);
   };
 
-  // Run immediately
+  // Run first wave immediately on click
   runSequence();
 
-  // Endlessly loop the packet sequence block every 3.2 seconds
+  // Endlessly loop the packet block every 3.2 seconds
   intervalRef.current = setInterval(runSequence, 3200);
 };
   // 🛑 Stop Broadcast
