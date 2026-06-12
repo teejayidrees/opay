@@ -54,15 +54,6 @@ const stopBroadcast = () => {
   }
 };
 
-  const stopBroadcast = () => {
-    setIsBroadcasting(false);
-    try {
-      oscillatorsRef.current.forEach((osc) => osc.stop());
-    } catch (e) {}
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close();
-    }
-  };
 
   return (
     <div style={styles.container}>
