@@ -64,7 +64,7 @@ export default function Sender() {
     <div style={styles.container}>
       <Card>
         <h2 style={styles.title}>OPay POS Terminal</h2>
-        <label>Account Number</label>
+        <label>Set your Account Number</label>
         <input
           value={account}
           onChange={(e) => setAccount(e.target.value)}
