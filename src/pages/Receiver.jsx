@@ -156,3 +156,11 @@ export default function Receiver() {
     </div>
   );
 }
+const styles = {
+  container: { padding: 30, display: "flex", justifyContent: "center" },
+  title: { marginBottom: 20, color: "#0b1f3a" },
+  inputBox: { marginBottom: 20 },
+  input: { width: "100%", padding: 12, marginTop: 6, borderRadius: 10, border: "1px solid #ddd", fontSize: 16 },
+  status: { marginBottom: 20, fontWeight: 600 },
+  success: { marginTop: 20, padding: 10, background: "#e8f5e9", color: "#00c853", borderRadius: 10, fontWeight: 600 },
+};
