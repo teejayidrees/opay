@@ -1,0 +1,12 @@
+:root {
+  --opay-green: #00c853;
+  --opay-dark: #0b1f3a;
+  --opay-bg: #f6f9fc;
+  --card-radius: 16px;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  background: var(--opay-bg);
+}

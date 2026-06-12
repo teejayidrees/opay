@@ -1,0 +1,9 @@
+@import "./opay-theme.css";
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  cursor: pointer;
+}
