@@ -5,8 +5,8 @@ export function encodeAccountNumber(accountNumber, audioContext) {
   const digits = accountNumber.split("");
   const oscillators = [];
   
-  let timeOffset = audioContext.currentTime + 0.02;
-  const toneDuration = 0.15; // 150ms per signal is completely optimal
+  let timeOffset = audioContext.currentTime + 0.05;
+  const toneDuration = 0.40; // 400ms per signal is massive, clear, and un-missable
 
   const playTone = (freq, start) => {
     const osc = audioContext.createOscillator();
@@ -16,8 +16,8 @@ export function encodeAccountNumber(accountNumber, audioContext) {
     
     // Smooth volume ramps to eliminate speaker popping noise
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.1, start + 0.01);
-    gain.gain.setValueAtTime(0.1, start + toneDuration - 0.01);
+    gain.gain.linearRampToValueAtTime(0.1, start + 0.02);
+    gain.gain.setValueAtTime(0.1, start + toneDuration - 0.02);
     gain.gain.linearRampToValueAtTime(0, start + toneDuration);
 
     osc.connect(gain);

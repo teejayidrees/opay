@@ -43,7 +43,7 @@ export default function Sender() {
     triggerSingleWaveform();
 
     // Endlessly loop the entire sequence every 4.5 seconds smoothly
-    intervalRef.current = setInterval(triggerSingleWaveform, 4500);
+    intervalRef.current = setInterval(triggerSingleWaveform, 8500);
   };
 
   const stopBroadcast = () => {

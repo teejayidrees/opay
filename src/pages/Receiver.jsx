@@ -70,7 +70,7 @@ const detectLoop = (bufferLength) => {
     const maxBin = Math.ceil(20100 / hzPerBin);
 
     for (let i = minBin; i <= maxBin; i++) {
-      if (dataArray[i] > highestVolume && dataArray[i] > 35) { 
+      if (dataArray[i] > highestVolume && dataArray[i] > 25) { 
         highestVolume = dataArray[i];
         targetFreq = i * hzPerBin;
       }
