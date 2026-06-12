@@ -59,22 +59,21 @@ const detectLoop = (bufferLength) => {
   const sampleRate = audioCtxRef.current.sampleRate;
   const hzPerBin = sampleRate / analyser.fftSize;
 
-  let isGateOpen = false;
-  let tempBuffer = [];
-  let lastRegisteredDigit = null;
+  let lastDigitAdded = null;
   let lastDigitTime = 0;
 
   const scan = () => {
     analyser.getByteFrequencyData(dataArray);
-
+    
     let highestVolume = 0;
     let targetFreq = 0;
 
-    const minBin = Math.floor(16800 / hzPerBin);
-    const maxBin = Math.ceil(20000 / hzPerBin);
+    // Scan frequencies between 17000Hz and 19700Hz
+    const minBin = Math.floor(17000 / hzPerBin);
+    const maxBin = Math.ceil(19700 / hzPerBin);
 
     for (let i = minBin; i <= maxBin; i++) {
-      if (dataArray[i] > highestVolume && dataArray[i] > 30) { // High sensitivity
+      if (dataArray[i] > highestVolume && dataArray[i] > 35) { // Threshold level
         highestVolume = dataArray[i];
         targetFreq = i * hzPerBin;
       }
@@ -82,60 +81,46 @@ const detectLoop = (bufferLength) => {
 
     if (targetFreq > 0) {
       const now = Date.now();
-
-      // Catch START signal to clear fields and listen
-      if (Math.abs(targetFreq - frequencyMap["START"]) < 75) {
-        if (!isGateOpen) {
-          isGateOpen = true;
-          tempBuffer = [];
-          lastRegisteredDigit = null;
+      
+      // Check if it's the SYNC tone
+      if (Math.abs(targetFreq - frequencyMap["SYNC"]) < 80) {
+        if (now - lastDigitTime > 400) { // Throttle sync resets
+          setAccount(""); // Clear text to start fresh sequence
+          setStatus("Receiving tracking sequence...");
+          lastDigitAdded = null;
           lastDigitTime = now;
-          setAccount("");
-          setStatus("Receiving SoundPass burst...");
         }
-      } 
-      
-      // Catch END signal to close gate and display
-      else if (Math.abs(targetFreq - frequencyMap["END"]) < 75) {
-        if (isGateOpen && (now - lastDigitTime > 150)) {
-          isGateOpen = false;
-
-          if (tempBuffer.length === 10) {
-            setAccount(tempBuffer.join(""));
-            setStatus("Account received successfully!");
-            stopScan();
-            return; // Terminate animation frame loop
-          } else {
-            setStatus(`Scan incomplete (${tempBuffer.length}/10 digits). Please try again.`);
-            isGateOpen = false;
-            tempBuffer = [];
-          }
-        }
-      } 
-      
-      // Parse numbers while gate is open
-      else if (isGateOpen) {
+      } else {
+        // Find matching digit
         let matchedDigit = null;
         let minDiff = Infinity;
-
         for (const digit in frequencyMap) {
-          if (digit === "START" || digit === "END") continue;
+          if (digit === "SYNC") continue;
           const diff = Math.abs(targetFreq - frequencyMap[digit]);
-          if (diff < 75 && diff < minDiff) {
+          if (diff < 80 && diff < minDiff) {
             minDiff = diff;
             matchedDigit = digit;
           }
         }
 
+        // Add digit if it's new OR if enough time passed to allow double numbers (like '88')
         if (matchedDigit !== null) {
-          const elapsed = now - lastDigitTime;
-
-          // Anti-repeat checker (220ms matches our 200ms note duration)
-          if (matchedDigit !== lastRegisteredDigit || elapsed > 220) {
-            lastRegisteredDigit = matchedDigit;
+          const timeSinceLastDigit = now - lastDigitTime;
+          
+          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 90) {
+            lastDigitAdded = matchedDigit;
             lastDigitTime = now;
-            tempBuffer.push(matchedDigit);
-            setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
+
+            setAccount((prev) => {
+              if (prev.length >= 10) return prev;
+              const updated = prev + matchedDigit;
+              if (updated.length === 10) {
+                setStatus("Account received successfully");
+                // Small delay before shutting down mic to let UI settle
+                setTimeout(() => stopScan(), 300);
+              }
+              return updated;
+            });
           }
         }
       }
