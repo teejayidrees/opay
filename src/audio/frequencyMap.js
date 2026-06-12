@@ -1,13 +1,14 @@
-// Expanded 300Hz separation to eliminate channel bleeding over cheap hardware microphones
+// Clean 200Hz steps to keep it well within standard microphone range
 export const frequencyMap = {
-  0: 17100,
+  0: 17200,
   1: 17400,
-  2: 17700,
-  3: 18000,
-  4: 18300,
-  5: 18600,
-  6: 18900,
-  7: 19200,
-  8: 19500,
-  9: 19800,
+  2: 17600,
+  3: 17800,
+  4: 18000,
+  5: 18200,
+  6: 18400,
+  7: 18600,
+  8: 18800,
+  9: 19000,
+  SYNC: 19500 // The "Reset/Wake-Up" frequency
 };
