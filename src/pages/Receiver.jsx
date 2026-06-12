@@ -75,7 +75,7 @@ export default function Receiver() {
         const volume = dataArray[i];
         
         // Volume detection threshold (Adjust down to 30 if room is quiet or speakers are low)
-        if (volume > 45) {
+        if (volume > 25) {
           const frequency = i * hzPerBin;
           const digit = findClosestDigit(frequency);
           
