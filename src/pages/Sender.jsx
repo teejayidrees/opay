@@ -12,27 +12,47 @@ export default function Sender() {
   const audioCtxRef = useRef(null);
   const oscillatorsRef = useRef([]);
 
-  const startBroadcast = async () => {
-    if (isBroadcasting) return;
+  // Inside Sender.jsx
+const startBroadcast = async () => {
+  if (isBroadcasting) return;
 
-    const ctx = createAudioContext();
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
-    }
-    
-    audioCtxRef.current = ctx;
-    setIsBroadcasting(true);
+  const ctx = createAudioContext();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  
+  audioCtxRef.current = ctx;
+  setIsBroadcasting(true);
 
-    // Call the fixed encoder module
-    const { oscillators, totalDuration } = encodeAccountNumber(account, ctx);
+  const loopSequence = () => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
+
+    // Trigger the single-packet builder array
+    const { oscillators, totalDuration } = encodeAccountNumber(account, audioCtxRef.current, 0.05);
     oscillatorsRef.current = oscillators;
 
-    // Turn off the radar animation automatically when the audio sequence completes
-    setTimeout(() => {
-      setIsBroadcasting(false);
-      ctx.close();
-    }, totalDuration * 1000);
+    // Schedule the next sequence burst precisely after this packet's duration + 1 second of resting silence
+    const nextIntervalDelay = (totalDuration + 1.0) * 1000;
+    intervalRef.current = setTimeout(loopSequence, nextIntervalDelay);
   };
+
+  // Run the endless chain loop
+  loopSequence();
+};
+
+// Ensure your stopBroadcast clears timeouts instead of intervals
+const stopBroadcast = () => {
+  setIsBroadcasting(false);
+  if (intervalRef.current) {
+    clearTimeout(intervalRef.current);
+  }
+  try {
+    oscillatorsRef.current.forEach((osc) => osc.stop());
+  } catch (e) {}
+  if (audioCtxRef.current) {
+    audioCtxRef.current.close();
+  }
+};
 
   const stopBroadcast = () => {
     setIsBroadcasting(false);

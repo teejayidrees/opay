@@ -10,5 +10,6 @@ export const frequencyMap = {
   7: 18600,
   8: 18800,
   9: 19000,
-  SYNC: 19500 
+  START: 19400, // Opening bracket
+  END: 19800    // Closing bracket
 };

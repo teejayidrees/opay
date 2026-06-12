@@ -49,83 +49,107 @@ export default function Receiver() {
     }
   };
 
-  const detectLoop = (bufferLength) => {
-    const analyser = analyserRef.current;
-    const dataArray = dataArrayRef.current;
-    const sampleRate = audioCtxRef.current.sampleRate;
-    const hzPerBin = sampleRate / analyser.fftSize;
+// Inside Receiver.jsx
+const detectLoop = (bufferLength) => {
+  const analyser = analyserRef.current;
+  const dataArray = dataArrayRef.current;
+  const sampleRate = audioCtxRef.current.sampleRate;
+  const hzPerBin = sampleRate / analyser.fftSize;
 
-    let lastDigitAdded = null;
-    let lastDigitTime = 0;
+  let isGateOpen = false;
+  let tempBuffer = [];
+  let lastDigitAdded = null;
+  let lastDigitTime = 0;
 
-    const scan = () => {
-      analyser.getByteFrequencyData(dataArray);
+  const scan = () => {
+    analyser.getByteFrequencyData(dataArray);
+    
+    let highestVolume = 0;
+    let targetFreq = 0;
+
+    const minBin = Math.floor(16800 / hzPerBin);
+    const maxBin = Math.ceil(20000 / hzPerBin);
+
+    for (let i = minBin; i <= maxBin; i++) {
+      if (dataArray[i] > highestVolume && dataArray[i] > 30) { 
+        highestVolume = dataArray[i];
+        targetFreq = i * hzPerBin;
+      }
+    }
+
+    if (targetFreq > 0) {
+      const now = Date.now();
       
-      let highestVolume = 0;
-      let targetFreq = 0;
-
-      // Restrict lookup index ranges to minimize processor load and noise induction
-      const minBin = Math.floor(16800 / hzPerBin);
-      const maxBin = Math.ceil(20000 / hzPerBin);
-
-      for (let i = minBin; i <= maxBin; i++) {
-        if (dataArray[i] > highestVolume && dataArray[i] > 30) { 
-          highestVolume = dataArray[i];
-          targetFreq = i * hzPerBin;
+      // RULE 1: Detect Boundary START Signal
+      if (Math.abs(targetFreq - frequencyMap["START"]) < 60) {
+        if (!isGateOpen && (now - lastDigitTime > 800)) { 
+          isGateOpen = true;
+          tempBuffer = [];
+          lastDigitAdded = null;
+          lastDigitTime = now;
+          setAccount(""); 
+          setStatus("Start token detected! Scanning incoming packet...");
         }
-      }
+      } 
+      
+      // RULE 2: Detect Boundary END Signal
+      else if (Math.abs(targetFreq - frequencyMap["END"]) < 60) {
+        if (isGateOpen && (now - lastDigitTime > 200)) {
+          isGateOpen = false;
+          lastDigitTime = now;
 
-      if (targetFreq > 0) {
-        const now = Date.now();
-        
-        // Catch the Sync/Reset burst signal
-        if (Math.abs(targetFreq - frequencyMap["SYNC"]) < 60) {
-          if (now - lastDigitTime > 400) { 
-            setAccount(""); 
-            setStatus("Sync found. Processing SoundPass wave...");
+          // RULE 4: Complete Validation Check (Must be exactly 10 digits)
+          if (tempBuffer.length === 10) {
+            setAccount(tempBuffer.join(""));
+            setStatus("Account received successfully!");
+            stopScan();
+            return; // Terminate execution frame loop safely
+          } else {
+            // Drop packet, wipe tracking, wait for next loop sequence
+            setStatus(`Data distorted (${tempBuffer.length}/10 parsed). Scanning next wave loop...`);
+            tempBuffer = [];
             lastDigitAdded = null;
-            lastDigitTime = now;
           }
-        } else {
-          let matchedDigit = null;
-          let minDiff = Infinity;
+        }
+      } 
+      
+      // RULE 3: Capture digits ONLY if the boundary gate is explicitly open
+      else if (isGateOpen) {
+        let matchedDigit = null;
+        let minDiff = Infinity;
+        
+        for (const digit in frequencyMap) {
+          if (digit === "START" || digit === "END") continue;
+          const diff = Math.abs(targetFreq - frequencyMap[digit]);
+          if (diff < 60 && diff < minDiff) {
+            minDiff = diff;
+            matchedDigit = digit;
+          }
+        }
+
+        if (matchedDigit !== null) {
+          const timeSinceLastDigit = now - lastDigitTime;
           
-          for (const digit in frequencyMap) {
-            if (digit === "SYNC") continue;
-            const diff = Math.abs(targetFreq - frequencyMap[digit]);
-            if (diff < 60 && diff < minDiff) {
-              minDiff = diff;
-              matchedDigit = digit;
-            }
-          }
+          // Anti-Repeat Guard: 250ms block prevents the same audio note 
+          // from being counted multiple times as it plays through the air
+          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 250) {
+            lastDigitAdded = matchedDigit;
+            lastDigitTime = now;
 
-          if (matchedDigit !== null) {
-            const timeSinceLastDigit = now - lastDigitTime;
+            tempBuffer.push(matchedDigit);
             
-            // 230ms debouncer directly intercepts repeating digits within the single note frame
-            if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 230) {
-              lastDigitAdded = matchedDigit;
-              lastDigitTime = now;
-
-              setAccount((prev) => {
-                if (prev.length >= 10) return prev;
-                const updated = prev + matchedDigit;
-                if (updated.length === 10) {
-                  setStatus("Account received successfully!");
-                  setTimeout(() => stopScan(), 300);
-                }
-                return updated;
-              });
-            }
+            // Render loading slots to show the user it is filling up live
+            setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
           }
         }
       }
-
-      animationRef.current = requestAnimationFrame(scan);
-    };
+    }
 
     animationRef.current = requestAnimationFrame(scan);
   };
+
+  animationRef.current = requestAnimationFrame(scan);
+};
 
   const stopScan = () => {
     setIsScanning(false);
