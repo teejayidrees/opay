@@ -11,49 +11,54 @@ export default function Sender() {
 
   const audioCtxRef = useRef(null);
   const oscillatorsRef = useRef([]);
+  const intervalRef = useRef(null);
 
-  // Inside Sender.jsx
-const startBroadcast = async () => {
-  if (isBroadcasting) return;
+  const startBroadcast = async () => {
+    if (isBroadcasting) return;
 
-  const ctx = createAudioContext();
-  if (ctx.state === 'suspended') {
-    await ctx.resume();
-  }
-  
-  audioCtxRef.current = ctx;
-  setIsBroadcasting(true);
+    const ctx = createAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    
+    audioCtxRef.current = ctx;
+    setIsBroadcasting(true);
 
-  const loopSequence = () => {
-    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
+    const triggerSingleWaveform = () => {
+      // Safety check to ensure context is active
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
+      
+      // Clear old oscillators from memory before firing a new burst loop
+      try {
+        oscillatorsRef.current.forEach(osc => osc.stop());
+      } catch(e){}
+      oscillatorsRef.current = [];
 
-    // Trigger the single-packet builder array
-    const { oscillators, totalDuration } = encodeAccountNumber(account, audioCtxRef.current, 0.05);
-    oscillatorsRef.current = oscillators;
+      // Fire the single sound packet
+      const { oscillators } = encodeAccountNumber(account, audioCtxRef.current);
+      oscillatorsRef.current = oscillators;
+    };
 
-    // Schedule the next sequence burst precisely after this packet's duration + 1 second of resting silence
-    const nextIntervalDelay = (totalDuration + 1.0) * 1000;
-    intervalRef.current = setTimeout(loopSequence, nextIntervalDelay);
+    // Run first transmission immediately
+    triggerSingleWaveform();
+
+    // Endlessly loop the entire sequence every 4.5 seconds smoothly
+    intervalRef.current = setInterval(triggerSingleWaveform, 4500);
   };
 
-  // Run the endless chain loop
-  loopSequence();
-};
-
-// Ensure your stopBroadcast clears timeouts instead of intervals
-const stopBroadcast = () => {
-  setIsBroadcasting(false);
-  if (intervalRef.current) {
-    clearTimeout(intervalRef.current);
-  }
-  try {
-    oscillatorsRef.current.forEach((osc) => osc.stop());
-  } catch (e) {}
-  if (audioCtxRef.current) {
-    audioCtxRef.current.close();
-  }
-};
-
+  const stopBroadcast = () => {
+    setIsBroadcasting(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    try {
+      oscillatorsRef.current.forEach((osc) => osc.stop());
+    } catch (e) {}
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close();
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -69,7 +74,7 @@ const stopBroadcast = () => {
         <div style={styles.status}>
           Status:{" "}
           <span style={{ color: isBroadcasting ? "#00c853" : "red" }}>
-            {isBroadcasting ? "Broadcasting..." : "Idle"}
+            {isBroadcasting ? "Broadcasting (Looping)..." : "Idle"}
           </span>
         </div>
         <div style={styles.buttons}>

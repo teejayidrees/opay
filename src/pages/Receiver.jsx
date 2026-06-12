@@ -71,7 +71,7 @@ const detectLoop = (bufferLength) => {
     const maxBin = Math.ceil(20000 / hzPerBin);
 
     for (let i = minBin; i <= maxBin; i++) {
-      if (dataArray[i] > highestVolume && dataArray[i] > 30) { 
+      if (dataArray[i] > highestVolume && dataArray[i] > 35) { 
         highestVolume = dataArray[i];
         targetFreq = i * hzPerBin;
       }
@@ -80,40 +80,39 @@ const detectLoop = (bufferLength) => {
     if (targetFreq > 0) {
       const now = Date.now();
       
-      // RULE 1: Detect Boundary START Signal
+      // Catch Boundary START Signal
       if (Math.abs(targetFreq - frequencyMap["START"]) < 60) {
-        if (!isGateOpen && (now - lastDigitTime > 800)) { 
+        if (!isGateOpen && (now - lastDigitTime > 1500)) { 
           isGateOpen = true;
           tempBuffer = [];
           lastDigitAdded = null;
           lastDigitTime = now;
           setAccount(""); 
-          setStatus("Start token detected! Scanning incoming packet...");
+          setStatus("START token parsed! Recording sequence...");
         }
       } 
       
-      // RULE 2: Detect Boundary END Signal
+      // Catch Boundary END Signal
       else if (Math.abs(targetFreq - frequencyMap["END"]) < 60) {
-        if (isGateOpen && (now - lastDigitTime > 200)) {
+        if (isGateOpen && (now - lastDigitTime > 300)) {
           isGateOpen = false;
           lastDigitTime = now;
 
-          // RULE 4: Complete Validation Check (Must be exactly 10 digits)
+          // Perform length check configuration
           if (tempBuffer.length === 10) {
             setAccount(tempBuffer.join(""));
             setStatus("Account received successfully!");
             stopScan();
-            return; // Terminate execution frame loop safely
+            return;
           } else {
-            // Drop packet, wipe tracking, wait for next loop sequence
-            setStatus(`Data distorted (${tempBuffer.length}/10 parsed). Scanning next wave loop...`);
+            setStatus(`Data mismatch (${tempBuffer.length}/10 parsed). Flushed. Listening for next loop...`);
             tempBuffer = [];
             lastDigitAdded = null;
           }
         }
       } 
       
-      // RULE 3: Capture digits ONLY if the boundary gate is explicitly open
+      // Capture digits only if gate is active
       else if (isGateOpen) {
         let matchedDigit = null;
         let minDiff = Infinity;
@@ -130,15 +129,12 @@ const detectLoop = (bufferLength) => {
         if (matchedDigit !== null) {
           const timeSinceLastDigit = now - lastDigitTime;
           
-          // Anti-Repeat Guard: 250ms block prevents the same audio note 
-          // from being counted multiple times as it plays through the air
-          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 250) {
+          // 380ms safety wall completely stops a single note from duplicating
+          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 380) {
             lastDigitAdded = matchedDigit;
             lastDigitTime = now;
-
             tempBuffer.push(matchedDigit);
             
-            // Render loading slots to show the user it is filling up live
             setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
           }
         }
