@@ -13,37 +13,88 @@ export default function Sender() {
   const intervalRef = useRef(null);
 
   // 🎧 Start Broadcast
-  const startBroadcast = async () => {
-    if (isBroadcasting) return;
+  // const startBroadcast = async () => {
+  //   if (isBroadcasting) return;
 
-    audioCtxRef.current = createAudioContext();
+  //   audioCtxRef.current = createAudioContext();
 
-    setIsBroadcasting(true);
+  //   setIsBroadcasting(true);
 
-    const startBurst = () => {
-      const oscillators = encodeAccountNumber(
-        account,
-        audioCtxRef.current
-      );
+  //   const startBurst = () => {
+  //     const oscillators = encodeAccountNumber(
+  //       account,
+  //       audioCtxRef.current
+  //     );
 
-      oscillatorsRef.current = oscillators;
+  //     oscillatorsRef.current = oscillators;
 
-      // Start sound
-      oscillators.forEach((osc) => osc.start());
+  //     // Start sound
+  //     oscillators.forEach((osc) => osc.start());
 
-      // Stop after 300ms (pulse system)
-      setTimeout(() => {
-        oscillators.forEach((osc) => osc.stop());
-      }, 300);
+  //     // Stop after 300ms (pulse system)
+  //     setTimeout(() => {
+  //       oscillators.forEach((osc) => osc.stop());
+  //     }, 300);
+  //   };
+
+  //   // Initial burst
+  //   startBurst();
+
+  //   // Repeat every 700ms (300ms sound + 400ms silence)
+  //   intervalRef.current = setInterval(startBurst, 700);
+  // };
+const startBroadcast = async () => {
+  if (isBroadcasting) return;
+
+  audioCtxRef.current = createAudioContext();
+  setIsBroadcasting(true);
+
+  const digits = account.split("");
+  const noteLength = 0.15;  // 150ms per digit (Wider, solid window)
+  const spaceLength = 0.08; // 80ms complete silence gap between numbers
+
+  const runSequence = () => {
+    let timeOffset = audioCtxRef.current.currentTime + 0.02;
+
+    // Helper function to program a tone burst safely
+    const playTone = (freq, start, duration) => {
+      const osc = audioCtxRef.current.createOscillator();
+      const gain = audioCtxRef.current.createGain();
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.08, start + 0.01);
+      gain.gain.setValueAtTime(0.08, start + duration - 0.01);
+      gain.gain.linearRampToValueAtTime(0, start + duration);
+
+      osc.connect(gain);
+      gain.connect(audioCtxRef.current.destination);
+      osc.start(start);
+      osc.stop(start + duration);
+      oscillatorsRef.current.push(osc);
     };
 
-    // Initial burst
-    startBurst();
+    // 1. Fire START framing flag
+    playTone(frequencyMap["START"], timeOffset, noteLength);
+    timeOffset += noteLength + spaceLength;
 
-    // Repeat every 700ms (300ms sound + 400ms silence)
-    intervalRef.current = setInterval(startBurst, 700);
+    // 2. Fire the 10 digits sequentially
+    digits.forEach((digit) => {
+      playTone(frequencyMap[digit], timeOffset, noteLength);
+      timeOffset += noteLength + spaceLength;
+    });
+
+    // 3. Fire END framing flag
+    playTone(frequencyMap["END"], timeOffset, noteLength);
   };
 
+  // Run immediately
+  runSequence();
+
+  // Endlessly loop the packet sequence block every 3.2 seconds
+  intervalRef.current = setInterval(runSequence, 3200);
+};
   // 🛑 Stop Broadcast
   const stopBroadcast = () => {
     setIsBroadcasting(false);

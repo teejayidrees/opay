@@ -52,7 +52,106 @@ export default function Receiver() {
       setStatus("Microphone access denied");
     }
   };
+const detectLoop = (bufferLength) => {
+  const analyser = analyserRef.current;
+  const dataArray = dataArrayRef.current;
+  const sampleRate = audioCtxRef.current.sampleRate;
+  const hzPerBin = sampleRate / analyser.fftSize;
 
+  let isGateOpen = false;
+  let tempBuffer = [];
+  let lastRegisteredDigit = null;
+  let lastDigitTime = 0;
+
+  const scan = () => {
+    analyser.getByteFrequencyData(dataArray);
+
+    let highestVolume = 0;
+    let targetFreq = 0;
+
+    // Monitor frequency bounds
+    const minBin = Math.floor(16800 / hzPerBin);
+    const maxBin = Math.ceil(20000 / hzPerBin);
+
+    for (let i = minBin; i <= maxBin; i++) {
+      if (dataArray[i] > highestVolume && dataArray[i] > 40) {
+        highestVolume = dataArray[i];
+        targetFreq = i * hzPerBin;
+      }
+    }
+
+    if (targetFreq > 0) {
+      const now = Date.now();
+
+      // GATE LAYER 1: Detect START Signal
+      if (Math.abs(targetFreq - frequencyMap["START"]) < 75) {
+        if (!isGateOpen && (now - lastDigitTime > 1000)) {
+          isGateOpen = true;
+          tempBuffer = [];
+          lastRegisteredDigit = null;
+          lastDigitTime = now;
+          setAccount(""); // Clear UI presentation pane
+          setStatus("Sync found! Parsing incoming packet...");
+        }
+      } 
+      
+      // GATE LAYER 2: Detect END Signal
+      else if (Math.abs(targetFreq - frequencyMap["END"]) < 75) {
+        if (isGateOpen && (now - lastDigitTime > 200)) {
+          isGateOpen = false;
+          lastDigitTime = now;
+
+          // Your fallback logic validation constraint: Check if we captured exactly 10 digits
+          if (tempBuffer.length === 10) {
+            const finalAccount = tempBuffer.join("");
+            setAccount(finalAccount);
+            setStatus("Account received successfully");
+            setTimeout(() => stopScan(), 200);
+          } else {
+            // Fault management recovery: Bad packet structure size, drop it and listen for next loop
+            setStatus(`Signal distorted (${tempBuffer.length}/10 digits). Retrying next wave loop...`);
+            tempBuffer = [];
+            lastRegisteredDigit = null;
+          }
+        }
+      } 
+      
+      // DATA LAYER: Parse digits inside open gate boundaries
+      else if (isGateOpen) {
+        let matchedDigit = null;
+        let minDiff = Infinity;
+
+        for (const digit in frequencyMap) {
+          if (digit === "START" || digit === "END") continue;
+          const diff = Math.abs(targetFreq - frequencyMap[digit]);
+          if (diff < 75 && diff < minDiff) {
+            minDiff = diff;
+            matchedDigit = digit;
+          }
+        }
+
+        if (matchedDigit !== null) {
+          const elapsed = now - lastDigitTime;
+
+          // The Anti-Repeat Guard: Only log if it's a completely new digit, 
+          // OR if it's the same digit but enough time has passed (meaning a new sound burst started)
+          if (matchedDigit !== lastRegisteredDigit || elapsed > 200) {
+            lastRegisteredDigit = matchedDigit;
+            lastDigitTime = now;
+            tempBuffer.push(matchedDigit);
+            
+            // Render progress real-time to track visually
+            setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
+          }
+        }
+      }
+    }
+
+    animationRef.current = requestAnimationFrame(scan);
+  };
+
+  animationRef.current = requestAnimationFrame(scan);
+};
   // const detectLoop = (bufferLength) => {
   //   const analyser = analyserRef.current;
   //   const dataArray = dataArrayRef.current;
@@ -121,84 +220,84 @@ export default function Receiver() {
 
   //   animationRef.current = requestAnimationFrame(scan);
   // };
-const detectLoop = (bufferLength) => {
-  const analyser = analyserRef.current;
-  const dataArray = dataArrayRef.current;
-  const sampleRate = audioCtxRef.current.sampleRate;
-  const hzPerBin = sampleRate / analyser.fftSize;
+// const detectLoop = (bufferLength) => {
+//   const analyser = analyserRef.current;
+//   const dataArray = dataArrayRef.current;
+//   const sampleRate = audioCtxRef.current.sampleRate;
+//   const hzPerBin = sampleRate / analyser.fftSize;
 
-  let lastDigitAdded = null;
-  let lastDigitTime = 0;
+//   let lastDigitAdded = null;
+//   let lastDigitTime = 0;
 
-  const scan = () => {
-    analyser.getByteFrequencyData(dataArray);
+//   const scan = () => {
+//     analyser.getByteFrequencyData(dataArray);
     
-    let highestVolume = 0;
-    let targetFreq = 0;
+//     let highestVolume = 0;
+//     let targetFreq = 0;
 
-    // Scan frequencies between 17000Hz and 19700Hz
-    const minBin = Math.floor(17000 / hzPerBin);
-    const maxBin = Math.ceil(19700 / hzPerBin);
+//     // Scan frequencies between 17000Hz and 19700Hz
+//     const minBin = Math.floor(17000 / hzPerBin);
+//     const maxBin = Math.ceil(19700 / hzPerBin);
 
-    for (let i = minBin; i <= maxBin; i++) {
-      if (dataArray[i] > highestVolume && dataArray[i] > 35) { // Threshold level
-        highestVolume = dataArray[i];
-        targetFreq = i * hzPerBin;
-      }
-    }
+//     for (let i = minBin; i <= maxBin; i++) {
+//       if (dataArray[i] > highestVolume && dataArray[i] > 35) { // Threshold level
+//         highestVolume = dataArray[i];
+//         targetFreq = i * hzPerBin;
+//       }
+//     }
 
-    if (targetFreq > 0) {
-      const now = Date.now();
+//     if (targetFreq > 0) {
+//       const now = Date.now();
       
-      // Check if it's the SYNC tone
-      if (Math.abs(targetFreq - frequencyMap["SYNC"]) < 80) {
-        if (now - lastDigitTime > 400) { // Throttle sync resets
-          setAccount(""); // Clear text to start fresh sequence
-          setStatus("Receiving tracking sequence...");
-          lastDigitAdded = null;
-          lastDigitTime = now;
-        }
-      } else {
-        // Find matching digit
-        let matchedDigit = null;
-        let minDiff = Infinity;
-        for (const digit in frequencyMap) {
-          if (digit === "SYNC") continue;
-          const diff = Math.abs(targetFreq - frequencyMap[digit]);
-          if (diff < 80 && diff < minDiff) {
-            minDiff = diff;
-            matchedDigit = digit;
-          }
-        }
+//       // Check if it's the SYNC tone
+//       if (Math.abs(targetFreq - frequencyMap["SYNC"]) < 80) {
+//         if (now - lastDigitTime > 400) { // Throttle sync resets
+//           setAccount(""); // Clear text to start fresh sequence
+//           setStatus("Receiving tracking sequence...");
+//           lastDigitAdded = null;
+//           lastDigitTime = now;
+//         }
+//       } else {
+//         // Find matching digit
+//         let matchedDigit = null;
+//         let minDiff = Infinity;
+//         for (const digit in frequencyMap) {
+//           if (digit === "SYNC") continue;
+//           const diff = Math.abs(targetFreq - frequencyMap[digit]);
+//           if (diff < 80 && diff < minDiff) {
+//             minDiff = diff;
+//             matchedDigit = digit;
+//           }
+//         }
 
-        // Add digit if it's new OR if enough time passed to allow double numbers (like '88')
-        if (matchedDigit !== null) {
-          const timeSinceLastDigit = now - lastDigitTime;
+//         // Add digit if it's new OR if enough time passed to allow double numbers (like '88')
+//         if (matchedDigit !== null) {
+//           const timeSinceLastDigit = now - lastDigitTime;
           
-          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 90) {
-            lastDigitAdded = matchedDigit;
-            lastDigitTime = now;
+//           if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 90) {
+//             lastDigitAdded = matchedDigit;
+//             lastDigitTime = now;
 
-            setAccount((prev) => {
-              if (prev.length >= 10) return prev;
-              const updated = prev + matchedDigit;
-              if (updated.length === 10) {
-                setStatus("Account received successfully");
-                // Small delay before shutting down mic to let UI settle
-                setTimeout(() => stopScan(), 300);
-              }
-              return updated;
-            });
-          }
-        }
-      }
-    }
+//             setAccount((prev) => {
+//               if (prev.length >= 10) return prev;
+//               const updated = prev + matchedDigit;
+//               if (updated.length === 10) {
+//                 setStatus("Account received successfully");
+//                 // Small delay before shutting down mic to let UI settle
+//                 setTimeout(() => stopScan(), 300);
+//               }
+//               return updated;
+//             });
+//           }
+//         }
+//       }
+//     }
 
-    animationRef.current = requestAnimationFrame(scan);
-  };
+//     animationRef.current = requestAnimationFrame(scan);
+//   };
 
-  animationRef.current = requestAnimationFrame(scan);
-};
+//   animationRef.current = requestAnimationFrame(scan);
+// };
   const findClosestDigit = (freq) => {
     let closestDigit = null;
     let minDiff = Infinity;
