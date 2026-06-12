@@ -5,41 +5,47 @@ export function encodeAccountNumber(accountNumber, audioContext) {
   const digits = accountNumber.split("");
   const oscillators = [];
   
-  let timeOffset = audioContext.currentTime + 0.05;
-  const noteLength = 0.25;  // 250ms solid tone burst
-  const spaceLength = 0.15; // 150ms deep gap to avoid overlapping waves
+  let timeOffset = audioContext.currentTime + 0.02;
+  const toneDuration = 0.15; // 150ms per signal is completely optimal
 
-  const playTone = (freq, start, duration) => {
+  const playTone = (freq, start) => {
     const osc = audioContext.createOscillator();
     const gain = audioContext.createGain();
     osc.frequency.value = freq;
     osc.type = "sine";
     
-    // Crisp gain envelope parameters
+    // Smooth volume ramps to eliminate speaker popping noise
     gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(0.1, start + 0.01);
-    gain.gain.setValueAtTime(0.1, start + duration - 0.01);
-    gain.gain.linearRampToValueAtTime(0, start + duration);
+    gain.gain.setValueAtTime(0.1, start + toneDuration - 0.01);
+    gain.gain.linearRampToValueAtTime(0, start + toneDuration);
 
     osc.connect(gain);
     gain.connect(audioContext.destination);
     osc.start(start);
-    osc.stop(start + duration);
+    osc.stop(start + toneDuration);
     oscillators.push(osc);
   };
 
-  // 1. Emit START framing gate
-  playTone(frequencyMap["START"], timeOffset, noteLength);
-  timeOffset += noteLength + spaceLength;
+  // 1. Emit START token
+  playTone(frequencyMap["START"], timeOffset);
+  timeOffset += toneDuration;
 
-  // 2. Emit the 10 account digits
-  digits.forEach((digit) => {
-    playTone(frequencyMap[digit], timeOffset, noteLength);
-    timeOffset += noteLength + spaceLength;
+  // 2. Interleave digits with the GAP frequency
+  digits.forEach((digit, index) => {
+    // Play the actual account digit
+    playTone(frequencyMap[digit], timeOffset);
+    timeOffset += toneDuration;
+
+    // Inject a GAP tone after every digit except the final one
+    if (index < digits.length - 1) {
+      playTone(frequencyMap["GAP"], timeOffset);
+      timeOffset += toneDuration;
+    }
   });
 
-  // 3. Emit END framing gate
-  playTone(frequencyMap["END"], timeOffset, noteLength);
+  // 3. Emit END token
+  playTone(frequencyMap["END"], timeOffset);
 
   return { oscillators };
 }

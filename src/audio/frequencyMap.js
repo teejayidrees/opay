@@ -10,6 +10,7 @@ export const frequencyMap = {
   7: 18600,
   8: 18800,
   9: 19000,
-  START: 19400, // Opening bracket
-  END: 19800    // Closing bracket
+  GAP: 19200,   // The state machine unlock key
+  START: 19500, // Sequence opening bracket
+  END: 19800    // Sequence closing bracket
 };

@@ -57,9 +57,8 @@ const detectLoop = (bufferLength) => {
   const hzPerBin = sampleRate / analyser.fftSize;
 
   let isGateOpen = false;
+  let isReadyForNextDigit = false;
   let tempBuffer = [];
-  let lastDigitAdded = null;
-  let lastDigitTime = 0;
 
   const scan = () => {
     analyser.getByteFrequencyData(dataArray);
@@ -67,8 +66,8 @@ const detectLoop = (bufferLength) => {
     let highestVolume = 0;
     let targetFreq = 0;
 
-    const minBin = Math.floor(16800 / hzPerBin);
-    const maxBin = Math.ceil(20000 / hzPerBin);
+    const minBin = Math.floor(17000 / hzPerBin);
+    const maxBin = Math.ceil(20100 / hzPerBin);
 
     for (let i = minBin; i <= maxBin; i++) {
       if (dataArray[i] > highestVolume && dataArray[i] > 35) { 
@@ -78,47 +77,49 @@ const detectLoop = (bufferLength) => {
     }
 
     if (targetFreq > 0) {
-      const now = Date.now();
       
-      // Catch Boundary START Signal
+      // LAYER 1: Match START Boundary
       if (Math.abs(targetFreq - frequencyMap["START"]) < 60) {
-        if (!isGateOpen && (now - lastDigitTime > 1500)) { 
+        if (!isGateOpen) {
           isGateOpen = true;
+          isReadyForNextDigit = true; // Unlock tracking gate
           tempBuffer = [];
-          lastDigitAdded = null;
-          lastDigitTime = now;
           setAccount(""); 
-          setStatus("START token parsed! Recording sequence...");
+          setStatus("START parsed. Sync locked...");
         }
       } 
       
-      // Catch Boundary END Signal
+      // LAYER 2: Match END Boundary
       else if (Math.abs(targetFreq - frequencyMap["END"]) < 60) {
-        if (isGateOpen && (now - lastDigitTime > 300)) {
+        if (isGateOpen) {
           isGateOpen = false;
-          lastDigitTime = now;
+          isReadyForNextDigit = false;
 
-          // Perform length check configuration
           if (tempBuffer.length === 10) {
             setAccount(tempBuffer.join(""));
             setStatus("Account received successfully!");
             stopScan();
             return;
           } else {
-            setStatus(`Data mismatch (${tempBuffer.length}/10 parsed). Flushed. Listening for next loop...`);
+            setStatus(`Data mismatch (${tempBuffer.length}/10 parsed). Dropped packet.`);
             tempBuffer = [];
-            lastDigitAdded = null;
           }
         }
       } 
       
-      // Capture digits only if gate is active
-      else if (isGateOpen) {
+      // LAYER 3: Match GAP Intermission Tone
+      else if (isGateOpen && Math.abs(targetFreq - frequencyMap["GAP"]) < 60) {
+        // The sender is playing a separator note; safely unlock the gate for the next incoming digit
+        isReadyForNextDigit = true;
+      } 
+      
+      // LAYER 4: Match Digits (Only allowed if isReadyForNextDigit is true)
+      else if (isGateOpen && isReadyForNextDigit) {
         let matchedDigit = null;
         let minDiff = Infinity;
         
         for (const digit in frequencyMap) {
-          if (digit === "START" || digit === "END") continue;
+          if (digit === "START" || digit === "END" || digit === "GAP") continue;
           const diff = Math.abs(targetFreq - frequencyMap[digit]);
           if (diff < 60 && diff < minDiff) {
             minDiff = diff;
@@ -127,16 +128,12 @@ const detectLoop = (bufferLength) => {
         }
 
         if (matchedDigit !== null) {
-          const timeSinceLastDigit = now - lastDigitTime;
+          tempBuffer.push(matchedDigit);
           
-          // 380ms safety wall completely stops a single note from duplicating
-          if (matchedDigit !== lastDigitAdded || timeSinceLastDigit > 380) {
-            lastDigitAdded = matchedDigit;
-            lastDigitTime = now;
-            tempBuffer.push(matchedDigit);
-            
-            setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
-          }
+          // Lock the gate instantly! Ignore all incoming tones until a clear GAP is processed
+          isReadyForNextDigit = false; 
+          
+          setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
         }
       }
     }
