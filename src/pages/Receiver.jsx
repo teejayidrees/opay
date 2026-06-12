@@ -70,12 +70,11 @@ const detectLoop = (bufferLength) => {
     let highestVolume = 0;
     let targetFreq = 0;
 
-    // Monitor frequency bounds
     const minBin = Math.floor(16800 / hzPerBin);
     const maxBin = Math.ceil(20000 / hzPerBin);
 
     for (let i = minBin; i <= maxBin; i++) {
-      if (dataArray[i] > highestVolume && dataArray[i] > 40) {
+      if (dataArray[i] > highestVolume && dataArray[i] > 30) { // High sensitivity
         highestVolume = dataArray[i];
         targetFreq = i * hzPerBin;
       }
@@ -84,40 +83,37 @@ const detectLoop = (bufferLength) => {
     if (targetFreq > 0) {
       const now = Date.now();
 
-      // GATE LAYER 1: Detect START Signal
+      // Catch START signal to clear fields and listen
       if (Math.abs(targetFreq - frequencyMap["START"]) < 75) {
-        if (!isGateOpen && (now - lastDigitTime > 1000)) {
+        if (!isGateOpen) {
           isGateOpen = true;
           tempBuffer = [];
           lastRegisteredDigit = null;
           lastDigitTime = now;
-          setAccount(""); // Clear UI presentation pane
-          setStatus("Sync found! Parsing incoming packet...");
+          setAccount("");
+          setStatus("Receiving SoundPass burst...");
         }
       } 
       
-      // GATE LAYER 2: Detect END Signal
+      // Catch END signal to close gate and display
       else if (Math.abs(targetFreq - frequencyMap["END"]) < 75) {
-        if (isGateOpen && (now - lastDigitTime > 200)) {
+        if (isGateOpen && (now - lastDigitTime > 150)) {
           isGateOpen = false;
-          lastDigitTime = now;
 
-          // Your fallback logic validation constraint: Check if we captured exactly 10 digits
           if (tempBuffer.length === 10) {
-            const finalAccount = tempBuffer.join("");
-            setAccount(finalAccount);
-            setStatus("Account received successfully");
-            setTimeout(() => stopScan(), 200);
+            setAccount(tempBuffer.join(""));
+            setStatus("Account received successfully!");
+            stopScan();
+            return; // Terminate animation frame loop
           } else {
-            // Fault management recovery: Bad packet structure size, drop it and listen for next loop
-            setStatus(`Signal distorted (${tempBuffer.length}/10 digits). Retrying next wave loop...`);
+            setStatus(`Scan incomplete (${tempBuffer.length}/10 digits). Please try again.`);
+            isGateOpen = false;
             tempBuffer = [];
-            lastRegisteredDigit = null;
           }
         }
       } 
       
-      // DATA LAYER: Parse digits inside open gate boundaries
+      // Parse numbers while gate is open
       else if (isGateOpen) {
         let matchedDigit = null;
         let minDiff = Infinity;
@@ -134,14 +130,11 @@ const detectLoop = (bufferLength) => {
         if (matchedDigit !== null) {
           const elapsed = now - lastDigitTime;
 
-          // The Anti-Repeat Guard: Only log if it's a completely new digit, 
-          // OR if it's the same digit but enough time has passed (meaning a new sound burst started)
-          if (matchedDigit !== lastRegisteredDigit || elapsed > 200) {
+          // Anti-repeat checker (220ms matches our 200ms note duration)
+          if (matchedDigit !== lastRegisteredDigit || elapsed > 220) {
             lastRegisteredDigit = matchedDigit;
             lastDigitTime = now;
             tempBuffer.push(matchedDigit);
-            
-            // Render progress real-time to track visually
             setAccount(tempBuffer.join("") + "_".repeat(10 - tempBuffer.length));
           }
         }

@@ -46,10 +46,8 @@ export default function Sender() {
 const startBroadcast = async () => {
   if (isBroadcasting) return;
 
-  // 1. Force initialize context directly inside the user's click stack
+  // Initialize context directly inside the user's click event
   const ctx = createAudioContext();
-  
-  // 2. Resume immediately if the browser put it to sleep (fixes Chrome auto-mute)
   if (ctx.state === 'suspended') {
     await ctx.resume();
   }
@@ -58,52 +56,49 @@ const startBroadcast = async () => {
   setIsBroadcasting(true);
 
   const digits = account.split("");
-  const noteLength = 0.15;  // 150ms per digit
-  const spaceLength = 0.08; // 80ms gap
+  const noteLength = 0.20;  // 200ms per digit (very stable speed)
+  const spaceLength = 0.05; // 50ms gap between digits
 
-  const runSequence = () => {
-    // Safety check: if user clicked stop, do nothing
-    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
+  let timeOffset = audioCtxRef.current.currentTime + 0.05;
+
+  const playTone = (freq, start, duration) => {
+    const osc = audioCtxRef.current.createOscillator();
+    const gain = audioCtxRef.current.createGain();
+    osc.frequency.value = freq;
+    osc.type = "sine";
     
-    let timeOffset = audioCtxRef.current.currentTime + 0.02;
+    // Smooth volume envelop to make sure it plays cleanly
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.1, start + 0.01);
+    gain.gain.setValueAtTime(0.1, start + duration - 0.01);
+    gain.gain.linearRampToValueAtTime(0, start + duration);
 
-    const playTone = (freq, start, duration) => {
-      const osc = audioCtxRef.current.createOscillator();
-      const gain = audioCtxRef.current.createGain();
-      osc.frequency.value = freq;
-      osc.type = "sine";
-      
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.08, start + 0.01);
-      gain.gain.setValueAtTime(0.08, start + duration - 0.01);
-      gain.gain.linearRampToValueAtTime(0, start + duration);
-
-      osc.connect(gain);
-      gain.connect(audioCtxRef.current.destination);
-      osc.start(start);
-      osc.stop(start + duration);
-      oscillatorsRef.current.push(osc);
-    };
-
-    // 1. START signal
-    playTone(frequencyMap["START"], timeOffset, noteLength);
-    timeOffset += noteLength + spaceLength;
-
-    // 2. The 10 digits
-    digits.forEach((digit) => {
-      playTone(frequencyMap[digit], timeOffset, noteLength);
-      timeOffset += noteLength + spaceLength;
-    });
-
-    // 3. END signal
-    playTone(frequencyMap["END"], timeOffset, noteLength);
+    osc.connect(gain);
+    gain.connect(audioCtxRef.current.destination);
+    osc.start(start);
+    osc.stop(start + duration);
+    oscillatorsRef.current.push(osc);
   };
 
-  // Run first wave immediately on click
-  runSequence();
+  // 1. Play START signal
+  playTone(frequencyMap["START"], timeOffset, noteLength);
+  timeOffset += noteLength + spaceLength;
 
-  // Endlessly loop the packet block every 3.2 seconds
-  intervalRef.current = setInterval(runSequence, 3200);
+  // 2. Play the 10 digits sequentially
+  digits.forEach((digit) => {
+    playTone(frequencyMap[digit], timeOffset, noteLength);
+    timeOffset += noteLength + spaceLength;
+  });
+
+  // 3. Play END signal
+  playTone(frequencyMap["END"], timeOffset, noteLength);
+  timeOffset += noteLength;
+
+  // Automatically reset the UI state back to "Idle" when the single transmission finishes
+  const totalDurationMs = (timeOffset - audioCtxRef.current.currentTime) * 1000;
+  setTimeout(() => {
+    setIsBroadcasting(false);
+  }, totalDurationMs);
 };
   // 🛑 Stop Broadcast
   const stopBroadcast = () => {
